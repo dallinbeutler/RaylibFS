@@ -14,15 +14,18 @@ let headers =
   |> List<string> 
 
 let p  = CppParserOptions ()
-p.ParseMacros<-true
-p.ParseAsCpp<-false
-//p.AutoSquashTypedef<-false
-p.TargetSystem<- "_WIN32"
+//p.ParseMacros<-true
+//p.ParseAsCpp<-false
+p.AutoSquashTypedef<-false
+//p.TargetSystem<- "_WIN32"
 
 //WHY U NO WORK?
 //let parsed = CppParser.ParseFiles(headers,p)
-let parsed = CppParser.ParseFile(@"..\..\..\..\raylib\src\raylib.h")
+let parsed = CppParser.ParseFile(@"..\..\..\..\raylib\src\raylib.h" , p)
 //let poo = parsed.Classes |> Seq.head
+
+
+
 
 let sanitizedTypeName (intype:CppType) = 
   let tname = intype.GetDisplayName()
@@ -34,6 +37,7 @@ let sanitizedTypeName (intype:CppType) =
   |x when x.StartsWith "unsigned int"->"uint32"
   |x when x.StartsWith "unsigned short"->"uint16"
   |"void[]"->"IntPtr"
+  //|"float[4]"->"Vector4"
   |_-> tname  
 
 let sanitizeVarName (str:string)=
@@ -48,9 +52,19 @@ type Scope(sb:StringBuilder)=
       ()
 
 let printEnum (sb:StringBuilder) (enum:CppEnum)=
-  sb.AppendLine (sprintf "type %O =" enum.Name)|>ignore
-  String.Join('\n', enum.Items |> Seq.map (fun x -> sprintf "|%O = %O" x.Name x.Value))
-  |> sb.AppendLine  
+  if String.IsNullOrWhiteSpace(enum.GetDisplayName()) 
+  then sb
+  else
+    sb.AppendLine (sprintf "type %O =" (enum.GetDisplayName()))|>ignore
+    String.Join('\n', enum.Items |> Seq.map (fun x -> sprintf "|%O = %O" x.Name x.Value))
+    |> sb.AppendLine  
+
+//let printTypeDef (sb:StringBuilder) (td:CppTypedef)  = 
+//  //if (td.ElementType.GetDisplayName()) = td.Name |> not
+//  //then 
+//    sprintf "type %O = %O" (td.ElementType.GetDisplayName())  td.Name       
+//       |> sb.AppendLine
+//  //else printStructDef sb td
 
 let printStruct (sb:StringBuilder) (struc: CppClass ) =
   sb.AppendLine("[<StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)>]")|>ignore
@@ -58,8 +72,9 @@ let printStruct (sb:StringBuilder) (struc: CppClass ) =
   sb.AppendLine(sprintf"  struct")|>ignore
   struc.Fields|>Seq.iter(fun field -> sb.AppendLine (sprintf "    val %O: %O" (sanitizeVarName field.Name) (sanitizedTypeName field.Type))|>ignore)
   sb.AppendLine(sprintf "  end")
+  //struc.Typedefs |> Seq.fold printTypeDef sb
 
-let printfunc (sb:StringBuilder) (assembly:string) (func:CppFunction ) =
+let printFunc (sb:StringBuilder) (assembly:string) (func:CppFunction ) =
 
   let printWeirdParams=      
     func.Parameters
@@ -85,40 +100,62 @@ let printfunc (sb:StringBuilder) (assembly:string) (func:CppFunction ) =
 
   sb
 
-let printFuncs ass sb =   
-  parsed.Functions 
-  |>Seq.fold(fun builder x -> printfunc builder ass x ) sb
+let parsed2 = CppParser.ParseFile(@"..\..\..\..\raylib\src\raylib.h")
+
+  
+
+//let printFuncs ass sb =   
+//  parsed.Functions 
+//  |>Seq.fold(fun builder x -> printfunc builder ass x ) sb
  
-
 //[<StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)>]
-let printEnums sb = 
-  parsed.Enums
-  |>Seq.fold(fun builder x -> printEnum builder x ) sb
+//let printEnums sb = 
+//  parsed.Enums
+//  |>Seq.fold(fun builder x -> printEnum builder x ) sb
 
-let printStructs sb =
-  parsed.Classes
-  |>Seq.fold(fun builder x -> printStruct builder x) sb
+//let printStructs sb =
+//  parsed.Classes
+//  |>Seq.fold(fun builder x -> printStruct builder x) sb
+
+//let printTypeDefs sb = 
+//  parsed.Typedefs
+//  |>Seq.fold(fun builder x -> printTypeDef builder x) sb
+let printTypeDef (sb:StringBuilder) (td:CppTypedef) =
+  sprintf "type %O = %O" (td.ElementType.GetDisplayName())  td.Name       
+  |> sb.AppendLine
+
+let rec handleCppDecl (sb:StringBuilder) (decl:ICppElement) =
+  match decl with
+  | :? CppEnum as enum -> printEnum sb enum
+  | :? CppFunction as func -> printFunc sb "Assembly name here" func
+  | :? CppClass as struc -> printStruct sb struc
+  | :? CppTypedef as tdef -> fixTypeDef sb tdef
+  |_ -> sb.AppendLine(sprintf "//not added: %O" decl)
+
+and fixTypeDef (sb:StringBuilder) (td:CppTypedef)  = 
+  if (td.ElementType.GetDisplayName()) = td.Name |> not 
+      && (String.IsNullOrWhiteSpace(td.ElementType.GetDisplayName())|> not)
+  then
+    printTypeDef sb td
+  else 
+    (parsed2.FindByName (td.GetDisplayName()) ) |> handleCppDecl sb
 
 
+let parseChildren sb =
+  parsed.Children()
+  |> Seq.fold handleCppDecl sb
 
 [<EntryPoint>]
 let main argv =
     let sb = StringBuilder()
     sb.AppendLine "module Raylib"|>ignore
     sb.AppendLine "open System"|>ignore
-    sb.AppendLine "open System.Runtime.InteropServices"|>ignore
+    sb.AppendLine "open System.Runtime.InteropServices"|>ignore    
     
-    sb.AppendLine() |> ignore    
-    sb.AppendLine(@"//Enums") |> ignore
-    printEnums sb |> ignore
-    sb.AppendLine() |> ignore
-    sb.AppendLine(@"//Structs") |> ignore
-    printStructs sb |>ignore
-    sb.AppendLine() |> ignore
-    sb.AppendLine(@"//Functions") |> ignore
-    printFuncs "\"Ass here\"" sb |> ignore    
+    parseChildren sb |> ignore
+
     File.WriteAllText (@"..\..\..\..\Bindings\raylib.fs", sb.ToString())
     Console.WriteLine("====================")
     printfn"Ignored:"
-    parsed.Typedefs |> Seq.iter(fun x -> printfn "%O->%O" (x.ElementType.GetDisplayName())  x.Name)
+    
     0 // return an integer exit code
