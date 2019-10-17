@@ -1,0 +1,9 @@
+source "C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\"
+source http://10.100.4.29:8624/nuget/SNC-Nuget
+source https://api.nuget.org/v3/index.json
+
+nuget FSharp.Core
+nuget ANGLE.WindowsStore 2.1.13 prerelease restriction: >= native
+nuget CppAst 0.5.9
+nuget FParsec 1.0.3
+nuget FParsec-Pipes 1.1.1

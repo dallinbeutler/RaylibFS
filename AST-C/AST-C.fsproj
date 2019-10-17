@@ -1,17 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>AST_C</RootNamespace>
   </PropertyGroup>
-
   <ItemGroup>
     <Compile Include="Library.fs" />
   </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="FParsec" Version="1.0.3" />
-    <PackageReference Include="FParsec-Pipes" Version="1.1.1" />
-  </ItemGroup>
-
+  <Import Project="..\.paket\Paket.Restore.targets" />
 </Project>
