@@ -16,7 +16,7 @@ let headers =
 let p  = CppParserOptions ()
 //p.ParseMacros<-true
 //p.ParseAsCpp<-false
-p.AutoSquashTypedef<-false
+//p.AutoSquashTypedef<-false
 //p.TargetSystem<- "_WIN32"
 
 //WHY U NO WORK?
@@ -37,7 +37,9 @@ let sanitizedTypeName (intype:CppType) =
   |x when x.StartsWith "unsigned int"->"uint32"
   |x when x.StartsWith "unsigned short"->"uint16"
   |"void[]"->"IntPtr"
-  //|"float[4]"->"Vector4"
+  |"void (*)"->"IntPtr"// not sure if right?
+  |"float[4]"->"Vector4"
+  |"char[32]"->"string" //Going to need  [<FixedBuffer(typeof<char>, 0x80)>] as attribute...
   |_-> tname  
 
 let sanitizeVarName (str:string)=
@@ -55,9 +57,9 @@ let printEnum (sb:StringBuilder) (enum:CppEnum)=
   if String.IsNullOrWhiteSpace(enum.GetDisplayName()) 
   then sb
   else
-    sb.AppendLine (sprintf "type %O =" (enum.GetDisplayName()))|>ignore
+    sb.AppendLine (sprintf "and %O =" (enum.GetDisplayName()))|>ignore
     String.Join('\n', enum.Items |> Seq.map (fun x -> sprintf "|%O = %O" x.Name x.Value))
-    |> sb.AppendLine  
+    |> sb.AppendLine      
 
 //let printTypeDef (sb:StringBuilder) (td:CppTypedef)  = 
 //  //if (td.ElementType.GetDisplayName()) = td.Name |> not
@@ -67,19 +69,23 @@ let printEnum (sb:StringBuilder) (enum:CppEnum)=
 //  //else printStructDef sb td
 
 let printStruct (sb:StringBuilder) (struc: CppClass ) =
-  sb.AppendLine("[<StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)>]")|>ignore
-  sb.AppendLine(sprintf "type %O =" (struc.GetDisplayName()))|>ignore
+  //sb.AppendLine("[<StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)>]")|>ignore
+  sb.AppendLine(sprintf "and %O =" (struc.GetDisplayName()))|>ignore
   sb.AppendLine(sprintf"  struct")|>ignore
   struc.Fields|>Seq.iter(fun field -> sb.AppendLine (sprintf "    val %O: %O" (sanitizeVarName field.Name) (sanitizedTypeName field.Type))|>ignore)
   sb.AppendLine(sprintf "  end")
   //struc.Typedefs |> Seq.fold printTypeDef sb
 
+let sanitizeFieldName str =
+  match str with
+  |"rec"->"rect"
+  |_->str
 let printFunc (sb:StringBuilder) (assembly:string) (func:CppFunction ) =
 
   let printWeirdParams=      
     func.Parameters
     |> Seq.map (fun x->
-      sanitizedTypeName x.Type + " " + x.Name 
+      sanitizedTypeName x.Type + " " + sanitizeFieldName x.Name 
       )
 
   let printTupled = "(" + String.Join (", ", printWeirdParams) + ")"
@@ -90,11 +96,11 @@ let printFunc (sb:StringBuilder) (assembly:string) (func:CppFunction ) =
   then
     let printParams=  
       func.Parameters
-      |> Seq.map (fun x-> x.Name + " : " + sanitizedTypeName x.Type)
+      |> Seq.map (fun x->sanitizeFieldName x.Name + " : " + sanitizedTypeName x.Type)
     let printSeparate = String.Join (" ",printParams|> Seq.map(fun s -> sprintf "(%O)" s))
     let paramsNoType =
       String.Join( ", ",
-        func.Parameters |> Seq.map (fun x-> x.Name)
+        func.Parameters |> Seq.map (fun x->sanitizeFieldName x.Name)
       )
     sb.AppendLine(sprintf "let nice%O %O = %O(%O)" func.Name printSeparate func.Name paramsNoType)|>ignore
 
@@ -121,13 +127,13 @@ let parsed2 = CppParser.ParseFile(@"..\..\..\..\raylib\src\raylib.h")
 //  parsed.Typedefs
 //  |>Seq.fold(fun builder x -> printTypeDef builder x) sb
 let printTypeDef (sb:StringBuilder) (td:CppTypedef) =
-  sprintf "type %O = %O" (td.ElementType.GetDisplayName())  td.Name       
+  sprintf "and %O = %O"   td.Name       (td.ElementType.GetDisplayName())
   |> sb.AppendLine
 
 let rec handleCppDecl (sb:StringBuilder) (decl:ICppElement) =
   match decl with
   | :? CppEnum as enum -> printEnum sb enum
-  | :? CppFunction as func -> printFunc sb "Assembly name here" func
+  | :? CppFunction as func -> printFunc sb "\"Assembly name here\"" func
   | :? CppClass as struc -> printStruct sb struc
   | :? CppTypedef as tdef -> fixTypeDef sb tdef
   |_ -> sb.AppendLine(sprintf "//not added: %O" decl)

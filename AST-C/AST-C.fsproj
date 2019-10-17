@@ -9,4 +9,9 @@
     <Compile Include="Library.fs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FParsec" Version="1.0.3" />
+    <PackageReference Include="FParsec-Pipes" Version="1.1.1" />
+  </ItemGroup>
+
 </Project>
